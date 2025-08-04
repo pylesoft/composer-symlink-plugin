@@ -54,7 +54,7 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
 
             if ($isModule) {
                 if (!isset($entry['module-name'])) {
-                    $io->write("<warning>⚠️  Skipping $packageName: 'module-name' required when 'module' is true</warning>");
+                    $io->write("<warning>⚠️  Skipping $packageName: 'module-name' is required when 'module' is true</warning>");
                     continue;
                 }
                 $targetDir = $projectRoot . '/app-modules/' . $entry['module-name'];
@@ -62,22 +62,29 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
                 $targetDir = $vendorDir . '/' . $packageName;
             }
 
-            $realPath = realpath($localPath);
-            if (!$realPath || !is_dir($realPath)) {
+            $resolvedPath = realpath($localPath);
+            if (!$resolvedPath || !is_dir($resolvedPath)) {
                 $io->write("<warning>⚠️  Invalid path for $packageName: $localPath</warning>");
                 continue;
             }
 
+            // Remove existing target if needed
             if (file_exists($targetDir) || is_link($targetDir)) {
-                $io->write("♻️  Removing existing $targetDir");
-                exec('rm -rf ' . escapeshellarg($targetDir));
+                $io->write("<info>♻️  Removing existing: $targetDir</info>");
+                if (is_link($targetDir) || is_file($targetDir)) {
+                    unlink($targetDir);
+                } else {
+                    exec('rm -rf ' . escapeshellarg($targetDir));
+                }
             }
 
+            // Ensure parent directory exists
             if (!is_dir(dirname($targetDir))) {
                 mkdir(dirname($targetDir), 0777, true);
             }
 
-            if (symlink($realPath, $targetDir)) {
+            // Create the symlink
+            if (symlink($resolvedPath, $targetDir)) {
                 $io->write("<info>✅ Symlinked $packageName → $targetDir</info>");
             } else {
                 $io->write("<error>❌ Failed to symlink $packageName</error>");
