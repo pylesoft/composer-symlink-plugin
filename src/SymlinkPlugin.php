@@ -5,69 +5,73 @@ namespace Pylesoft\SymlinkPlugin;
 use Composer\Plugin\PluginInterface;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Script\Event;
+use Composer\Composer;
 use Composer\IO\IOInterface;
 
 class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
 {
-    public function activate(\Composer\Composer $composer, IOInterface $io)
+    public function activate(Composer $composer, IOInterface $io)
     {
-        // No-op
+        // No setup needed at activation
     }
 
-    public function deactivate(\Composer\Composer $composer, IOInterface $io)
+    public function deactivate(Composer $composer, IOInterface $io)
     {
-        // No-op
+        // No teardown needed at deactivation
     }
 
-    public function uninstall(\Composer\Composer $composer, IOInterface $io)
+    public function uninstall(Composer $composer, IOInterface $io)
     {
-        // No-op
+        // No cleanup needed at uninstall
     }
 
-    public static function getSubscribedEvents()
+    public static function getSubscribedEvents(): array
     {
         return [
-            'post-install-cmd' => 'handle',
-            'post-update-cmd' => 'handle',
+            'pre-autoload-dump' => 'handle',
         ];
     }
 
-    public static function handle(Event $event)
+    public static function handle(Event $event): void
     {
+        $io = $event->getIO();
+        $composer = $event->getComposer();
+        $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectRoot = getcwd();
-        $vendorDir = $event->getComposer()->getConfig()->get('vendor-dir');
-        $configPath = $projectRoot . '/composer.local.json';
+        $configFile = $projectRoot . '/composer.local.json';
 
-        if (!file_exists($configPath)) {
-            $event->getIO()->write("<info>🔗 composer.local.json not found. Skipping symlinks.</info>");
+        if (!file_exists($configFile)) {
+            $io->write("<info>🔗 composer.local.json not found. Skipping symlink operations.</info>");
             return;
         }
 
-        $json = file_get_contents($configPath);
+        $json = file_get_contents($configFile);
         $map = json_decode($json, true);
 
         if (!is_array($map)) {
-            $event->getIO()->write("<error>❌ composer.local.json must be a JSON array of objects with 'name' and 'path'.</error>");
+            $io->write("<error>❌ composer.local.json must contain an array of {\"name\":..., \"path\":...} entries.</error>");
             return;
         }
 
         foreach ($map as $entry) {
             if (!isset($entry['name']) || !isset($entry['path'])) {
-                $event->getIO()->write("<warning>⚠️  Invalid entry: must include 'name' and 'path'.</warning>");
+                $io->write("<warning>⚠️  Skipping invalid entry. Must include 'name' and 'path'.</warning>");
                 continue;
             }
 
             $packageName = $entry['name'];
             $localPath = $entry['path'];
-            $targetDir = $vendorDir . '/' . $packageName;
+            $resolvedPath = realpath($localPath);
 
-            $realPath = realpath($localPath);
-            if (!$realPath || !is_dir($realPath)) {
-                $event->getIO()->write("<warning>⚠️  Path for $packageName does not exist: $localPath</warning>");
+            if (!$resolvedPath || !is_dir($resolvedPath)) {
+                $io->write("<warning>⚠️  Path for <comment>$packageName</comment> does not exist or is invalid: $localPath</warning>");
                 continue;
             }
 
+            $targetDir = $vendorDir . '/' . $packageName;
+
             if (file_exists($targetDir) || is_link($targetDir)) {
+                $io->write("♻️  Removing existing directory/link for <comment>$packageName</comment>");
                 exec('rm -rf ' . escapeshellarg($targetDir));
             }
 
@@ -75,7 +79,11 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
                 mkdir(dirname($targetDir), 0777, true);
             }
 
-            if (symlink($realPath, $targetDir)) {
-                $event->getIO()->write("<info>✅ Symlinked $packageName → $realPath</info>");
+            if (symlink($resolvedPath, $targetDir)) {
+                $io->write("<info>✅ Symlinked <comment>$packageName</comment> → $resolvedPath</info>");
             } else {
-                $event->getIO()->write("<error>❌ Failed to symlink $packageName</e
+                $io->write("<error>❌ Failed to symlink <comment>$packageName</comment></error>");
+            }
+        }
+    }
+}
