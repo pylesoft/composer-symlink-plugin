@@ -10,25 +10,14 @@ use Composer\IO\IOInterface;
 
 class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
 {
-    public function activate(Composer $composer, IOInterface $io)
-    {
-        // No setup needed at activation
-    }
-
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-        // No teardown needed at deactivation
-    }
-
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-        // No cleanup needed at uninstall
-    }
+    public function activate(Composer $composer, IOInterface $io) {}
+    public function deactivate(Composer $composer, IOInterface $io) {}
+    public function uninstall(Composer $composer, IOInterface $io) {}
 
     public static function getSubscribedEvents(): array
     {
         return [
-            'pre-autoload-dump' => 'handle',
+            'pre-autoload-dump' => 'handle'
         ];
     }
 
@@ -49,29 +38,38 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
         $map = json_decode($json, true);
 
         if (!is_array($map)) {
-            $io->write("<error>❌ composer.local.json must contain an array of {\"name\":..., \"path\":...} entries.</error>");
+            $io->write("<error>❌ composer.local.json must be a JSON array of objects.</error>");
             return;
         }
 
         foreach ($map as $entry) {
-            if (!isset($entry['name']) || !isset($entry['path'])) {
-                $io->write("<warning>⚠️  Skipping invalid entry. Must include 'name' and 'path'.</warning>");
+            if (!isset($entry['name'], $entry['path'])) {
+                $io->write("<warning>⚠️  Skipping entry: missing 'name' or 'path'</warning>");
                 continue;
             }
 
             $packageName = $entry['name'];
             $localPath = $entry['path'];
-            $resolvedPath = realpath($localPath);
+            $isModule = isset($entry['module']) && $entry['module'] === true;
 
-            if (!$resolvedPath || !is_dir($resolvedPath)) {
-                $io->write("<warning>⚠️  Path for <comment>$packageName</comment> does not exist or is invalid: $localPath</warning>");
+            if ($isModule) {
+                if (!isset($entry['module-name'])) {
+                    $io->write("<warning>⚠️  Skipping $packageName: 'module-name' required when 'module' is true</warning>");
+                    continue;
+                }
+                $targetDir = $projectRoot . '/app-modules/' . $entry['module-name'];
+            } else {
+                $targetDir = $vendorDir . '/' . $packageName;
+            }
+
+            $realPath = realpath($localPath);
+            if (!$realPath || !is_dir($realPath)) {
+                $io->write("<warning>⚠️  Invalid path for $packageName: $localPath</warning>");
                 continue;
             }
 
-            $targetDir = $vendorDir . '/' . $packageName;
-
             if (file_exists($targetDir) || is_link($targetDir)) {
-                $io->write("♻️  Removing existing directory/link for <comment>$packageName</comment>");
+                $io->write("♻️  Removing existing $targetDir");
                 exec('rm -rf ' . escapeshellarg($targetDir));
             }
 
@@ -79,10 +77,10 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
                 mkdir(dirname($targetDir), 0777, true);
             }
 
-            if (symlink($resolvedPath, $targetDir)) {
-                $io->write("<info>✅ Symlinked <comment>$packageName</comment> → $resolvedPath</info>");
+            if (symlink($realPath, $targetDir)) {
+                $io->write("<info>✅ Symlinked $packageName → $targetDir</info>");
             } else {
-                $io->write("<error>❌ Failed to symlink <comment>$packageName</comment></error>");
+                $io->write("<error>❌ Failed to symlink $packageName</error>");
             }
         }
     }
