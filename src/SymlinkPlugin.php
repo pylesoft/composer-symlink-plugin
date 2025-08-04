@@ -11,13 +11,24 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
 {
     public function activate(\Composer\Composer $composer, IOInterface $io)
     {
-        // Nothing needed on activate
+        // No-op
+    }
+
+    public function deactivate(\Composer\Composer $composer, IOInterface $io)
+    {
+        // No-op
+    }
+
+    public function uninstall(\Composer\Composer $composer, IOInterface $io)
+    {
+        // No-op
     }
 
     public static function getSubscribedEvents()
     {
         return [
-            'pre-autoload-dump' => 'handle',
+            'post-install-cmd' => 'handle',
+            'post-update-cmd' => 'handle',
         ];
     }
 
@@ -36,22 +47,21 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
         $map = json_decode($json, true);
 
         if (!is_array($map)) {
-            $event->getIO()->write("<error>❌ composer.local.json is not a valid JSON array.</error>");
+            $event->getIO()->write("<error>❌ composer.local.json must be a JSON array of objects with 'name' and 'path'.</error>");
             return;
         }
 
         foreach ($map as $entry) {
             if (!isset($entry['name']) || !isset($entry['path'])) {
-                $event->getIO()->write("<warning>⚠️  Invalid entry in composer.local.json: must have 'name' and 'path'.</warning>");
+                $event->getIO()->write("<warning>⚠️  Invalid entry: must include 'name' and 'path'.</warning>");
                 continue;
             }
 
             $packageName = $entry['name'];
             $localPath = $entry['path'];
-
             $targetDir = $vendorDir . '/' . $packageName;
-            $realPath = realpath($localPath);
 
+            $realPath = realpath($localPath);
             if (!$realPath || !is_dir($realPath)) {
                 $event->getIO()->write("<warning>⚠️  Path for $packageName does not exist: $localPath</warning>");
                 continue;
@@ -68,8 +78,4 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
             if (symlink($realPath, $targetDir)) {
                 $event->getIO()->write("<info>✅ Symlinked $packageName → $realPath</info>");
             } else {
-                $event->getIO()->write("<error>❌ Failed to symlink $packageName</error>");
-            }
-        }
-    }
-}
+                $event->getIO()->write("<error>❌ Failed to symlink $packageName</e
