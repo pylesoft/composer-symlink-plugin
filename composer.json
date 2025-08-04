@@ -1,0 +1,17 @@
+{
+    "name": "pylesoft/composer-symlink-plugin",
+    "description": "Composer plugin to symlink local packages defined in composer.local.json",
+    "type": "composer-plugin",
+    "license": "MIT",
+    "autoload": {
+      "psr-4": {
+        "Pylesoft\\SymlinkPlugin\\": "src/"
+      }
+    },
+    "require": {
+      "composer-plugin-api": "^2.0"
+    },
+    "extra": {
+      "class": "Pylesoft\\SymlinkPlugin\\SymlinkPlugin"
+    }
+  }
