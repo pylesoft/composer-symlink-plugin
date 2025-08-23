@@ -71,24 +71,169 @@ class SymlinkPlugin implements PluginInterface, EventSubscriberInterface
             // Remove existing target if needed
             if (file_exists($targetDir) || is_link($targetDir)) {
                 $io->write("<info>♻️  Removing existing: $targetDir</info>");
-                if (is_link($targetDir) || is_file($targetDir)) {
-                    unlink($targetDir);
-                } else {
-                    exec('rm -rf ' . escapeshellarg($targetDir));
+                if (!self::removeDirectory($targetDir)) {
+                    $io->write("<warning>⚠️  Failed to remove existing directory: $targetDir</warning>");
                 }
             }
 
             // Ensure parent directory exists
-            if (!is_dir(dirname($targetDir))) {
-                mkdir(dirname($targetDir), 0777, true);
+            $parentDir = dirname($targetDir);
+            if (!is_dir($parentDir)) {
+                if (!mkdir($parentDir, 0777, true)) {
+                    $io->write("<error>❌ Failed to create parent directory: $parentDir</error>");
+                    continue;
+                }
+                $io->write("<info>📁 Created parent directory: $parentDir</info>");
             }
 
-            // Create the symlink
-            if (symlink($resolvedPath, $targetDir)) {
+            // Create the symlink (cross-platform)
+            if (self::createSymlink($resolvedPath, $targetDir, $io)) {
                 $io->write("<info>✅ Symlinked $packageName → $targetDir</info>");
             } else {
                 $io->write("<error>❌ Failed to symlink $packageName</error>");
             }
         }
+    }
+
+    private static function removeDirectory(string $path): bool
+    {
+        try {
+            if (PHP_OS_FAMILY === 'Windows') {
+                // On Windows, handle both junctions and regular directories
+                $normalizedPath = str_replace('/', '\\', $path);
+                
+                // Check if it's a junction point first
+                $command = sprintf('dir "%s" | findstr "<JUNCTION>"', dirname($normalizedPath));
+                exec($command, $output, $returnCode);
+                $isJunction = $returnCode === 0 && !empty($output);
+                
+                if ($isJunction) {
+                    // Remove junction with rmdir (doesn't delete target content)
+                    $command = sprintf('rmdir "%s"', $normalizedPath);
+                    exec($command, $output, $returnCode);
+                    return $returnCode === 0;
+                } elseif (is_dir($path)) {
+                    // Regular directory - use PowerShell for reliable removal
+                    $command = sprintf('powershell -Command "if (Test-Path \'%s\') { Remove-Item -Path \'%s\' -Recurse -Force }"', $path, $path);
+                    exec($command, $output, $returnCode);
+                    return $returnCode === 0 && !file_exists($path);
+                } elseif (is_file($path) || is_link($path)) {
+                    return unlink($path);
+                }
+            } else {
+                // Unix/Linux/Mac
+                if (is_link($path)) {
+                    return unlink($path);
+                } elseif (is_file($path)) {
+                    return unlink($path);
+                } elseif (is_dir($path)) {
+                    exec('rm -rf ' . escapeshellarg($path), $output, $returnCode);
+                    return $returnCode === 0;
+                }
+            }
+            
+            return true; // Path doesn't exist, consider it "removed"
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    private static function removeDirectoryRecursive(string $dir): bool
+    {
+        if (!is_dir($dir)) {
+            return true;
+        }
+
+        $files = scandir($dir);
+        if ($files === false) {
+            return false;
+        }
+
+        $files = array_diff($files, ['.', '..']);
+        
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            
+            if (is_dir($path)) {
+                if (!self::removeDirectoryRecursive($path)) {
+                    return false;
+                }
+            } else {
+                // Handle read-only files on Windows
+                if (PHP_OS_FAMILY === 'Windows' && !is_writable($path)) {
+                    if (!chmod($path, 0666)) {
+                        return false;
+                    }
+                }
+                if (!unlink($path)) {
+                    return false;
+                }
+            }
+        }
+        
+        return rmdir($dir);
+    }
+
+    private static function createSymlink(string $target, string $link, IOInterface $io): bool
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            // On Windows, use NTFS junctions like Composer does (works without admin privileges)
+            // Use forward slashes and remove quotes from paths for mklink
+            $normalizedTarget = str_replace('/', '\\', $target);
+            $normalizedLink = str_replace('/', '\\', $link);
+            
+            $command = sprintf('mklink /J "%s" "%s"', $normalizedLink, $normalizedTarget);
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0) {
+                return true;
+            }
+            
+            // If junction fails, try directory symlink
+            $io->write("<warning>⚠️  Junction failed, trying directory symlink</warning>");
+            $command = sprintf('mklink /D "%s" "%s"', $normalizedLink, $normalizedTarget);
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0) {
+                return true;
+            }
+            
+            // Final fallback to copying
+            $io->write("<warning>⚠️  Symlink methods failed, falling back to directory copy</warning>");
+            return self::copyDirectory($target, $link);
+        }
+        
+        // Unix/Linux/Mac - use native symlink
+        return symlink($target, $link);
+    }
+
+    private static function copyDirectory(string $source, string $destination): bool
+    {
+        if (!is_dir($source)) {
+            return false;
+        }
+
+        if (!is_dir($destination)) {
+            mkdir($destination, 0777, true);
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($source, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $targetPath = $destination . DIRECTORY_SEPARATOR . $iterator->getSubPathName();
+            
+            if ($item->isDir()) {
+                if (!is_dir($targetPath)) {
+                    mkdir($targetPath, 0777, true);
+                }
+            } else {
+                copy($item, $targetPath);
+            }
+        }
+
+        return true;
     }
 }
