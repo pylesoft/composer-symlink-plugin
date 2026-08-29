@@ -7,6 +7,7 @@ use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\IO\IOInterface;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
+use RuntimeException;
 
 class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
 {
@@ -72,7 +73,13 @@ class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
                 continue;
             }
 
-            FilesystemLinker::replace($resolvedPath, $targetDir);
+            try {
+                FilesystemLinker::replace($resolvedPath, $targetDir);
+            } catch (RuntimeException $exception) {
+                $io->writeError("<error>Unable to link {$packageName}: {$exception->getMessage()}</error>");
+
+                continue;
+            }
 
             $io->write("<info>Linked {$packageName} to {$resolvedPath}.</info>");
         }

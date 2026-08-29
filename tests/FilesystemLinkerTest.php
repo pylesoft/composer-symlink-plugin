@@ -18,9 +18,17 @@ try {
     mkdir($source, 0777, true);
     file_put_contents($source.DIRECTORY_SEPARATOR.'marker.txt', 'first');
 
+    mkdir($destination.DIRECTORY_SEPARATOR.'stale', 0777, true);
+    file_put_contents($destination.DIRECTORY_SEPARATOR.'stale'.DIRECTORY_SEPARATOR.'marker.txt', 'stale');
+
     FilesystemLinker::replace($source, $destination);
 
     $expect(file_get_contents($destination.DIRECTORY_SEPARATOR.'marker.txt') === 'first', 'The initial local package link is unreadable.');
+    $expect(! file_exists($destination.DIRECTORY_SEPARATOR.'stale'), 'The regular destination directory was not replaced.');
+
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $expect(is_link($destination), 'Unix-like systems must use a symbolic link.');
+    }
 
     file_put_contents($source.DIRECTORY_SEPARATOR.'marker.txt', 'second');
 
@@ -30,6 +38,18 @@ try {
     file_put_contents($source.DIRECTORY_SEPARATOR.'after-replace.txt', 'visible');
 
     $expect(file_get_contents($destination.DIRECTORY_SEPARATOR.'after-replace.txt') === 'visible', 'Replacing an existing local package link failed.');
+
+    FilesystemLinker::remove($destination);
+
+    $expect(! file_exists($destination), 'Removing the local package link failed.');
+    $expect(file_get_contents($source.DIRECTORY_SEPARATOR.'marker.txt') === 'second', 'Removing the link modified its source.');
+
+    if (PHP_OS_FAMILY !== 'Windows') {
+        symlink($root.DIRECTORY_SEPARATOR.'missing-source', $destination);
+        FilesystemLinker::remove($destination);
+
+        $expect(! is_link($destination), 'Removing a broken symbolic link failed.');
+    }
 
     echo 'FilesystemLinker test passed on '.PHP_OS_FAMILY.PHP_EOL;
 } finally {

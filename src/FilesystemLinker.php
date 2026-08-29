@@ -109,13 +109,37 @@ final class FilesystemLinker
 
     private static function isWindowsReparsePoint(string $path): bool
     {
+        $parent = dirname($path);
+        $name = basename($path);
+
         exec(
-            'fsutil reparsepoint query '.self::windowsArgument($path).' >NUL 2>&1',
-            $output,
-            $exitCode,
+            'cmd.exe /D /C dir /A /B '.self::windowsArgument($parent).' 2>NUL',
+            $entries,
+            $entriesExitCode,
         );
 
-        return $exitCode === 0;
+        if ($entriesExitCode !== 0 || ! self::containsWindowsEntry($entries, $name)) {
+            throw new RuntimeException("Unable to inspect local package destination: {$path}");
+        }
+
+        exec(
+            'cmd.exe /D /C dir /A:L /B '.self::windowsArgument($parent).' 2>NUL',
+            $links,
+        );
+
+        return self::containsWindowsEntry($links, $name);
+    }
+
+    /** @param list<string> $entries */
+    private static function containsWindowsEntry(array $entries, string $name): bool
+    {
+        foreach ($entries as $entry) {
+            if (strcasecmp($entry, $name) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function windowsArgument(string $path): string
