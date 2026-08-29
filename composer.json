@@ -4,14 +4,17 @@
     "type": "composer-plugin",
     "license": "MIT",
     "autoload": {
-      "psr-4": {
-        "Pylesoft\\SymlinkPlugin\\": "src/"
-      }
+        "psr-4": {
+            "Pylesoft\\SymlinkPlugin\\": "src/"
+        }
     },
     "require": {
-      "composer-plugin-api": "^2.0"
+        "composer-plugin-api": "^2.0"
+    },
+    "scripts": {
+        "test": "php tests/FilesystemLinkerTest.php"
     },
     "extra": {
-      "class": "Pylesoft\\SymlinkPlugin\\SymlinkPlugin"
+        "class": "Pylesoft\\SymlinkPlugin\\SymlinkPlugin"
     }
-  }
+}
