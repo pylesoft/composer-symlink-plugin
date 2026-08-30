@@ -153,6 +153,9 @@ final class FilesystemLinker
 
     private static function samePath(string $expected, string $actual): bool
     {
+        clearstatcache(true, $expected);
+        clearstatcache(true, $actual);
+
         $resolvedExpected = realpath($expected);
         $resolvedActual = realpath($actual);
 
@@ -167,6 +170,8 @@ final class FilesystemLinker
 
     private static function exists(string $path): bool
     {
+        clearstatcache(true, $path);
+
         return file_exists($path) || is_link($path) || @lstat($path) !== false;
     }
 }
