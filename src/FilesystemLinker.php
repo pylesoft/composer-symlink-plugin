@@ -29,7 +29,7 @@ final class FilesystemLinker
             return;
         }
 
-        if (! symlink($resolvedSource, $destination)) {
+        if (! symlink($resolvedSource, $destination) || ! self::samePath($resolvedSource, $destination)) {
             throw new RuntimeException("Unable to create local package symlink: {$destination}");
         }
     }

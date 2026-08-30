@@ -47,7 +47,7 @@ class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
         }
 
         foreach ($map as $entry) {
-            if (! isset($entry['name'], $entry['path'])) {
+            if (! is_array($entry) || ! isset($entry['name'], $entry['path'])) {
                 $io->writeError('<warning>Skipping local package entry without a name or path.</warning>');
 
                 continue;
