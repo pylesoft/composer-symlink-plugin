@@ -47,8 +47,8 @@ class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
         }
 
         foreach ($map as $entry) {
-            if (! is_array($entry) || ! isset($entry['name'], $entry['path'])) {
-                $io->writeError('<warning>Skipping local package entry without a name or path.</warning>');
+            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || $entry['name'] === '' || ! is_string($entry['path'] ?? null) || $entry['path'] === '' || str_contains($entry['path'], "\0")) {
+                $io->writeError('<warning>Skipping local package entry with an invalid name or path.</warning>');
 
                 continue;
             }
@@ -56,14 +56,16 @@ class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
             $packageName = $entry['name'];
             $isModule = ($entry['module'] ?? false) === true;
 
-            if ($isModule && ! isset($entry['module-name'])) {
-                $io->writeError("<warning>Skipping {$packageName}: module-name is required for modules.</warning>");
+            $targetName = $isModule ? ($entry['module-name'] ?? null) : $packageName;
+
+            if (! self::isSafeRelativePath($targetName)) {
+                $io->writeError("<warning>Skipping {$packageName}: destination must be a relative child path.</warning>");
 
                 continue;
             }
 
             $targetDir = $isModule
-                ? $projectRoot.'/app-modules/'.$entry['module-name']
+                ? $projectRoot.'/app-modules/'.$targetName
                 : $vendorDir.'/'.$packageName;
             $resolvedPath = realpath($entry['path']);
 
@@ -83,5 +85,16 @@ class SymlinkPlugin implements EventSubscriberInterface, PluginInterface
 
             $io->write("<info>Linked {$packageName} to {$resolvedPath}.</info>");
         }
+    }
+
+    private static function isSafeRelativePath(mixed $path): bool
+    {
+        if (! is_string($path) || $path === '' || str_contains($path, "\0") || preg_match('/^[a-z]:/i', $path)) {
+            return false;
+        }
+
+        $segments = preg_split('#[\\\\/]#', $path);
+
+        return $segments !== false && array_intersect($segments, ['', '.', '..']) === [];
     }
 }

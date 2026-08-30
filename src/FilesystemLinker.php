@@ -48,10 +48,24 @@ final class FilesystemLinker
             return;
         }
 
-        if (PHP_OS_FAMILY === 'Windows' && self::isWindowsReparsePoint($path)) {
-            self::removeWindowsJunction($path);
+        if (PHP_OS_FAMILY === 'Windows') {
+            $metadata = @lstat($path);
 
-            return;
+            if ($metadata === false) {
+                throw new RuntimeException("Unable to inspect local package destination: {$path}");
+            }
+
+            if (($metadata['mode'] ?? 0) === 0) {
+                if (! @rmdir($path)) {
+                    throw new RuntimeException("Unable to remove local package junction: {$path}");
+                }
+
+                return;
+            }
+
+            if (@rmdir($path)) {
+                return;
+            }
         }
 
         foreach (new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS) as $item) {
@@ -79,76 +93,32 @@ final class FilesystemLinker
 
     private static function createWindowsJunction(string $source, string $destination): void
     {
-        exec(sprintf(
-            'cmd.exe /D /C mklink /J %s %s',
-            self::windowsArgument($destination),
-            self::windowsArgument($source),
-        ), $output, $exitCode);
+        $process = proc_open(
+            'cmd.exe /D /V:ON /C mklink /J "!PYLE_DESTINATION!" "!PYLE_SOURCE!"',
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            env_vars: array_merge(getenv(), [
+                'PYLE_DESTINATION' => $destination,
+                'PYLE_SOURCE' => $source,
+            ]),
+        );
+
+        if (! is_resource($process)) {
+            throw new RuntimeException("Unable to start local package junction creation: {$destination}");
+        }
+
+        $output = trim(stream_get_contents($pipes[1]).stream_get_contents($pipes[2]));
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
 
         if ($exitCode !== 0 || ! self::samePath($source, $destination)) {
             throw new RuntimeException(sprintf(
                 'Unable to create local package junction: %s%s',
                 $destination,
-                $output === [] ? '' : PHP_EOL.implode(PHP_EOL, $output),
+                $output === '' ? '' : PHP_EOL.$output,
             ));
         }
-    }
-
-    private static function removeWindowsJunction(string $path): void
-    {
-        exec(
-            'cmd.exe /D /C rmdir '.self::windowsArgument($path),
-            $output,
-            $exitCode,
-        );
-
-        if ($exitCode !== 0 || self::exists($path)) {
-            throw new RuntimeException("Unable to remove local package junction: {$path}");
-        }
-    }
-
-    private static function isWindowsReparsePoint(string $path): bool
-    {
-        $parent = dirname($path);
-        $name = basename($path);
-
-        exec(
-            'cmd.exe /D /C dir /A /B '.self::windowsArgument($parent).' 2>NUL',
-            $entries,
-            $entriesExitCode,
-        );
-
-        if ($entriesExitCode !== 0 || ! self::containsWindowsEntry($entries, $name)) {
-            throw new RuntimeException("Unable to inspect local package destination: {$path}");
-        }
-
-        exec(
-            'cmd.exe /D /C dir /A:L /B '.self::windowsArgument($parent).' 2>NUL',
-            $links,
-        );
-
-        return self::containsWindowsEntry($links, $name);
-    }
-
-    /** @param list<string> $entries */
-    private static function containsWindowsEntry(array $entries, string $name): bool
-    {
-        foreach ($entries as $entry) {
-            if (strcasecmp($entry, $name) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function windowsArgument(string $path): string
-    {
-        if (str_contains($path, '"') || str_contains($path, "\0")) {
-            throw new RuntimeException('Windows local package paths cannot contain quotes or null bytes.');
-        }
-
-        return '"'.$path.'"';
     }
 
     private static function samePath(string $expected, string $actual): bool

@@ -4,7 +4,7 @@ use Pylesoft\SymlinkPlugin\FilesystemLinker;
 
 require_once dirname(__DIR__).'/src/FilesystemLinker.php';
 
-$root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'composer symlink plugin-'.bin2hex(random_bytes(6));
+$root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'composer symlink plugin-é-%SDK%-&-!-[x]-'.bin2hex(random_bytes(6));
 $source = $root.DIRECTORY_SEPARATOR.'source';
 $destination = $root.DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'example'.DIRECTORY_SEPARATOR.'package';
 
